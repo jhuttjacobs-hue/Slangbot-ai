@@ -15,12 +15,8 @@ use_emojis = st.sidebar.toggle("Enable Emojis", value=True, help="Allows the AI 
 use_slang = st.sidebar.toggle("Enable Slang", value=True, help="Allows the AI to use Gen-Z slang and casual text shortcuts.")
 use_gifs = st.sidebar.toggle("Enable GIFs", value=True, help="Instructs the AI to embed relevant GIPHY/Tenor visual links.")
 
-st.sidebar.divider()
-
-# API Configuration
-st.sidebar.subheader("🔑 API Configuration")
-api_provider = st.sidebar.selectbox("LLM Provider", ["OpenAI", "Groq", "Ollama (Local)", "Fallback Simulation Mode"])
-api_key = st.sidebar.text_input("Enter API Key", type="password", disabled=(api_provider == "Ollama (Local)" or api_provider == "Fallback Simulation Mode"))
+# Check if a Secret Key exists in Streamlit Cloud
+secret_key = st.secrets.get("GROQ_API_KEY") or os.environ.get("GROQ_API_KEY")
 
 # --- DYNAMIC SYSTEM PROMPT CONSTRUCTOR ---
 def build_system_prompt(emojis, slang, gifs):
@@ -28,19 +24,16 @@ def build_system_prompt(emojis, slang, gifs):
         "You are VibeBot, an incredibly engaging and responsive AI companion. Your response structure is strictly dictated by the following layout rules:"
     ]
     
-    # Emoji rule
     if emojis:
         prompt_segments.append("- EMOJIS: ALWAYS use vibrant and contextual emojis throughout your sentences to express mood and enthusiasm.")
     else:
         prompt_segments.append("- EMOJIS: Do NOT use any emojis under any circumstances. Keep your text completely clean of emoticons or graphic characters.")
         
-    # Slang rule
     if slang:
         prompt_segments.append("- SLANG: Use current Gen-Z slang, internet vernacular, and abbreviations (e.g., 'no cap', 'bet', 'fr fr', 'bussin', 'lowkey', 'skibidi', 'rizz', 'cooking'). Sound casual, warm, and highly expressive.")
     else:
         prompt_segments.append("- SLANG: Maintain an articulate, clean, and standard grammatical tone. Avoid all internet jargon, slang terms, or modern colloquial phrases.")
         
-    # GIF rule
     if gifs:
         prompt_segments.append("- GIFs: At the very end of your response, you MUST append a relevant markdown GIF syntax line from public sources (e.g., `![gif](https://giphy.com)`). Ensure the URL path looks like a standard valid public gif image asset to show the user.")
     else:
@@ -49,34 +42,29 @@ def build_system_prompt(emojis, slang, gifs):
     return " ".join(prompt_segments)
 
 # --- BACKEND LLM CALL ROUTER ---
-def get_ai_response(messages, provider, key, system_prompt):
-    # Construct formatting list
+def get_ai_response(messages, system_prompt, key):
     full_messages = [{"role": "system", "content": system_prompt}] + messages
     
-    # Run structural fallback if selected or key is missing
-    if provider == "Fallback Simulation Mode" or (provider == "OpenAI" and not key) or (provider == "Groq" and not key):
+    # Fallback to simulation if key is missing completely
+    if not key:
         return mock_llm_response(messages[-1]["content"], use_emojis, use_slang, use_gifs)
         
     try:
-        if provider == "OpenAI":
-            client = OpenAI(api_key=key)
-            model_name = "gpt-4o-mini"
-        elif provider == "Groq":
-            client = OpenAI(base_url="https://groq.com", api_key=key)
-            model_name = "llama3-8b-8192"
-        elif provider == "Ollama (Local)":
-            client = OpenAI(base_url="http://localhost:11434/v1", api_key="ollama")
-            model_name = "llama3"
-            
+        # Standard corrected Groq base URL alignment
+        client = OpenAI(
+            base_url="https://groq.com",
+            api_key=key
+        )
+        
         response = client.chat.completions.create(
-            model=model_name,
+            model="llama-3.1-8b-instant",  # Stable high-speed cloud model
             messages=full_messages,
             max_tokens=400,
-            temperature=0.7
+            temperature=0.8
         )
-        return response.choices[0].message.content
+        return response.choices.message.content
     except Exception as e:
-        return f"⚠️ **Connection Error:** Could not reach the provider ({str(e)}). Defaulting to Simulation mode rules..."
+        return f"⚠️ **Connection Error:** {str(e)}. Defaulting to Simulation mode rules..."
 
 # --- FALLBACK SIMULATION DATABASE ---
 def mock_llm_response(user_input, emojis, slang, gifs):
@@ -113,17 +101,14 @@ for msg in st.session_state.messages:
 
 # User prompt ingestion
 if prompt := st.chat_input("Say something to VibeBot..."):
-    # Render user chat bubble
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
         
-    # Generate personality configuration
     current_system_prompt = build_system_prompt(use_emojis, use_slang, use_gifs)
     
-    # Process and render bot response
     with st.chat_message("assistant"):
-        with st.spinner("Vibing..."):
-            ai_reply = get_ai_response(st.session_state.messages, api_provider, api_key, current_system_prompt)
+        with st.spinner("Thinking..."):
+            ai_reply = get_ai_response(st.session_state.messages, current_system_prompt, secret_key)
             st.markdown(ai_reply)
             st.session_state.messages.append({"role": "assistant", "content": ai_reply})
