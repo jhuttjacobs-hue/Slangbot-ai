@@ -56,7 +56,7 @@ def get_ai_response(messages, system_prompt, key):
         )
         
         response = client.chat.completions.create(
-            model="llama3-8b-8192",
+            model="llama-3.1-8b-instant",
             messages=full_messages,
             max_tokens=400,
             temperature=0.8
